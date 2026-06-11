@@ -1,0 +1,67 @@
+name: Build APK
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📥 سحب الكود
+        uses: actions/checkout@v4
+
+      - name: 🔧 تثبيت Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: ☕ تثبيت Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: 17
+
+      - name: 📦 تثبيت الاعتماديات
+        run: npm install
+
+      - name: 🏗️ بناء تطبيق React
+        run: npm run build
+
+      - name: 📱 تثبيت Cordova
+        run: npm install -g cordova
+
+      - name: 🏗️ إنشاء مشروع Cordova
+        run: cordova create app com.eliot.mask "Eliot's Mask"
+
+      - name: 📂 نسخ ملفات البناء إلى www
+        run: cp -r dist/* app/www/
+
+      - name: 🖼️ إنشاء أيقونة افتراضية (إذا لم توجد)
+        run: |
+          if [ ! -f icon.png ]; then
+            convert -size 512x512 xc:'#0a0a0a' -fill '#00ff88' -font Courier -pointsize 200 -gravity center -annotate 0 'E' icon.png
+          fi
+          cp icon.png app/icon.png
+        continue-on-error: true
+
+      - name: 🖼️ نسخ الأيقونة
+        run: cp icon.png app/icon.png 2>/dev/null || echo "No icon.png found, using default"
+
+      - name: ⚙️ حقن الأيقونة في config.xml
+        run: |
+          cd app
+          sed -i 's|</widget>|    <icon src="icon.png" />\n</widget>|' config.xml
+
+      - name: 🤖 إضافة منصة أندرويد
+        run: cd app && cordova platform add android
+
+      - name: 🔨 بناء APK
+        run: cd app && cordova build android --release
+
+      - name: 📤 رفع APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: eliot-mask-apk
+          path: app/platforms/android/app/build/outputs/apk/release/*.apk
