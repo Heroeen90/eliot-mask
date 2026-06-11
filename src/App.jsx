@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import TargetBar from './components/TargetBar';
 import ToolGrid from './components/ToolGrid';
 import Terminal from './components/Terminal';
+import HistoryPanel, { addToHistory } from './components/HistoryPanel';
 import { executeCommand } from './api/client';
 
-// استرجاع المفضلة من localStorage
 function getStoredFavorites() {
   try { return JSON.parse(localStorage.getItem('eliot_favorites') || '[]'); }
   catch { return []; }
@@ -19,8 +19,8 @@ function App() {
   const [terminalLines, setTerminalLines] = useState([]);
   const [selectedTool, setSelectedTool] = useState(null);
   const [showTerminal, setShowTerminal] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
-  const terminalRef = useRef(null);
 
   useEffect(() => { storeFavorites(favorites); }, [favorites]);
 
@@ -37,7 +37,6 @@ function App() {
   const handleSelectTool = (tool) => {
     setSelectedTool(tool);
     setShowTerminal(true);
-    // عرض الأمر في الطرفية
     if (tool && target) {
       const cmd = tool.cmd.replace('{TARGET}', target);
       addTerminalLine(`$ ${cmd}`, 'command');
@@ -48,7 +47,6 @@ function App() {
     if (!selectedTool || !target || isExecuting) return;
     setIsExecuting(true);
     const cmd = selectedTool.cmd.replace('{TARGET}', target);
-    addTerminalLine(`⏳ جاري التنفيذ...`, 'info');
 
     const result = await executeCommand(cmd);
 
@@ -60,12 +58,38 @@ function App() {
     } else {
       addTerminalLine('(لا توجد مخرجات)', 'dim');
     }
+
+    // حفظ في التاريخ
+    addToHistory({
+      command: cmd,
+      tool: selectedTool.name,
+      target,
+      success: !result.error,
+      output: result.output?.substring(0, 200) || '',
+    });
+
     setIsExecuting(false);
   };
 
-  const handleClearTerminal = () => {
+  const handleReplay = (entry) => {
+    setTarget(entry.target || '');
     setTerminalLines([]);
+    addTerminalLine(`$ ${entry.command}`, 'command');
+    addTerminalLine('🔄 إعادة تنفيذ...', 'info');
+    setShowTerminal(true);
+    setShowHistory(false);
+    // إعادة التنفيذ تلقائياً
+    setTimeout(async () => {
+      const result = await executeCommand(entry.command);
+      if (result.error) addTerminalLine(result.error, 'error');
+      else if (result.output) {
+        addTerminalLine(result.output, 'output');
+        addTerminalLine('✅ اكتمل التنفيذ', 'success');
+      }
+    }, 500);
   };
+
+  const handleClearTerminal = () => setTerminalLines([]);
 
   return (
     <div style={{
@@ -78,7 +102,7 @@ function App() {
       {/* شريط الهدف */}
       <TargetBar onTargetChange={setTarget} />
 
-      {/* رسالة الهدف + زر التنفيذ */}
+      {/* شريط التحكم */}
       {target && (
         <div style={{
           background: 'rgba(0,255,136,0.05)',
@@ -87,72 +111,64 @@ function App() {
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
+          flexWrap: 'wrap',
+          gap: 6,
         }}>
           <span style={{ fontSize: '0.7rem', color: '#00ff88', fontFamily: 'monospace', direction: 'ltr' }}>
             🎯 {target}
           </span>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              onClick={() => setShowHistory(!showHistory)}
+              style={ctrlBtnStyle(showHistory ? '#ffaa00' : '#888')}
+            >
+              📜 {showHistory ? 'إخفاء' : 'سجل'}
+            </button>
             <button
               onClick={() => setShowTerminal(!showTerminal)}
-              style={{
-                background: showTerminal ? 'rgba(0,255,136,0.1)' : 'transparent',
-                border: '1px solid #333',
-                borderRadius: 6,
-                color: showTerminal ? '#00ff88' : '#888',
-                padding: '5px 10px',
-                fontSize: '0.65rem',
-                cursor: 'pointer',
-                fontFamily: 'monospace',
-              }}
+              style={ctrlBtnStyle(showTerminal ? '#00ff88' : '#888')}
             >
-              📟 {showTerminal ? 'إخفاء' : 'إظهار'} الطرفية
+              📟 {showTerminal ? 'إخفاء' : 'طرفية'}
             </button>
             {selectedTool && (
               <button
                 onClick={handleExecute}
                 disabled={isExecuting}
                 style={{
-                  background: isExecuting ? '#1a1a1a' : 'rgba(0,255,136,0.1)',
-                  border: `1px solid ${isExecuting ? '#333' : '#00ff88'}`,
-                  borderRadius: 6,
-                  color: isExecuting ? '#666' : '#00ff88',
-                  padding: '5px 14px',
-                  fontSize: '0.7rem',
-                  fontWeight: 700,
-                  cursor: isExecuting ? 'not-allowed' : 'pointer',
-                  fontFamily: 'monospace',
+                  ...ctrlBtnStyle('#00ff88'),
+                  opacity: isExecuting ? 0.5 : 1,
                 }}
               >
-                {isExecuting ? '⏳ جاري...' : '▶ تنفيذ'}
+                {isExecuting ? '⏳' : '▶'} تنفيذ {selectedTool.name}
               </button>
             )}
           </div>
         </div>
       )}
 
-      {/* المحتوى الرئيسي: شبكة الأدوات أو الطرفية */}
+      {/* المحتوى الرئيسي */}
       <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-        {/* شبكة الأدوات */}
-        <div style={{ flex: showTerminal ? 0.5 : 1, overflow: 'hidden', transition: 'flex 0.3s' }}>
-          <ToolGrid
-            onSelectTool={handleSelectTool}
-            favorites={favorites}
-            onToggleFavorite={handleToggleFavorite}
-          />
-        </div>
-
-        {/* الطرفية */}
-        {showTerminal && (
-          <div style={{ flex: 0.5, overflow: 'hidden' }}>
-            <Terminal
-              lines={terminalLines}
-              onClear={handleClearTerminal}
-            />
-          </div>
+        {showHistory ? (
+          <HistoryPanel onReplay={handleReplay} onClose={() => setShowHistory(false)} />
+        ) : (
+          <>
+            <div style={{ flex: showTerminal ? 0.5 : 1, overflow: 'hidden', transition: 'flex 0.3s' }}>
+              <ToolGrid
+                onSelectTool={handleSelectTool}
+                favorites={favorites}
+                onToggleFavorite={handleToggleFavorite}
+              />
+            </div>
+            {showTerminal && (
+              <div style={{ flex: 0.5, overflow: 'hidden' }}>
+                <Terminal lines={terminalLines} onClear={handleClearTerminal} />
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* شريط الحالة السفلي */}
+      {/* شريط الحالة */}
       <div style={{
         background: '#111',
         borderTop: '1px solid #1a2a2a',
@@ -169,6 +185,19 @@ function App() {
       </div>
     </div>
   );
+}
+
+function ctrlBtnStyle(color) {
+  return {
+    background: 'rgba(255,255,255,0.03)',
+    border: `1px solid ${color}33`,
+    borderRadius: 6,
+    color: color,
+    padding: '5px 10px',
+    fontSize: '0.65rem',
+    cursor: 'pointer',
+    fontFamily: 'monospace',
+  };
 }
 
 export default App;
