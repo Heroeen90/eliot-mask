@@ -1,7 +1,7 @@
 // ==================== عميل API ====================
 // استبدل هذا بعنوان خادمك الحقيقي عند النشر
 
-const API_URL = 'https://eliot-server.onrender.com/api/execute';
+const API_URL = 'https://eliot1server.pythonanywhere.com/api/execute';
 
 /**
  * تنفيذ أمر على الخادم الخلفي
