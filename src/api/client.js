@@ -1,5 +1,5 @@
 // ==================== عميل API ====================
-const LOCAL_URL = 'http://127.0.0.1:5000/api/execute';
+const LOCAL_URL = 'http://192.168.9.107:5000/api/execute';
 const CLOUD_URL = 'https://eliot1server.pythonanywhere.com/api/execute';
 
 // غيّر إلى false للعودة للسحابة
